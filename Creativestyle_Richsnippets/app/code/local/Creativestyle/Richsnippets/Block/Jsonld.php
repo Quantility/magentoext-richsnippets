@@ -63,6 +63,7 @@ class Creativestyle_Richsnippets_Block_Jsonld extends Mage_Core_Block_Template
                 $reviewData = array();
                 if (count($reviews) > 0) {
                     foreach ($reviews as $r) {
+                        $ratings = array();
                         foreach ($r->getRatingVotes() as $vote) {
                             $ratings[] = $vote->getPercent();
                         }
@@ -83,23 +84,29 @@ class Creativestyle_Richsnippets_Block_Jsonld extends Mage_Core_Block_Template
                             'datePublished' => str_replace('/', '-', $datePublished[0]),
                             'name' => $this->htmlEscape($r->getTitle()),
                             'reviewBody' => nl2br($this->escapeHtml($r->getDetail())),
-                            'reviewRating' => $avg
+                            'reviewRating' => array(
+                                '@type'       => 'Rating',
+                                'ratingValue' => $avg
+                            )
                         );
                     }
                 }
 
                 // let's put review data into $json array
-                $json['reviewCount'] = $reviewSummary->getTotalReviews($product->getId());
+                $json['reviewCount'] = $reviewSummary->getTotalReviews($product->getId(), true);
                 $json['ratingValue'] = number_format(floor(($ratingData['rating_summary'] / 20) * 2) / 2, 1); // average rating (1-5 range)
                 $json['review'] = $reviewData;
             }
 
-            //use Desc if Shortdesc not work
-            if( $product->getShortDescription() ) {
-            	$descsnippet = html_entity_decode(strip_tags($product->getShortDescription()));
-			} else {
-				$descsnippet = Mage::helper('core/string')->substr(html_entity_decode(strip_tags($product->getDescription())), 0, 165);
-			}
+           //use Desc if Shortdesc not work
+           $descsnippet =" ";
+    	   if($product->getFeatures()) {
+    		  $descsnippet = $product->getFeatures();   
+    	   } else if( $product->getShortDescription() ) {
+              $descsnippet = $product->getShortDescription();
+    	   } else {
+    		 $descsnippet = $product->getDescription();
+    	   }
 
             // Final array with all basic product data
             $data = array(
@@ -110,16 +117,18 @@ class Creativestyle_Richsnippets_Block_Jsonld extends Mage_Core_Block_Template
                 'image' => $product->getImageUrl(),
                 'url' => $product->getProductUrl(),
                 //'description' => trim(preg_replace('/\s+/', ' ', $this->stripTags($product->getShortDescription()))),
-                'description' => $descsnippet, //use Desc if Shortdesc not work
-                'offers' => array(
-                    '@type' => 'Offer',
-                    'availability' => $json['availability'],
-                    'price' => number_format((float)$product->getFinalPrice(), 2, '.', ''),
-                    'priceCurrency' => $currencyCode,
-                    'category' => $json['category']
-                )
+                'description' => preg_replace('/\s\s+/', ' ', html_entity_decode(strip_tags($descsnippet))) //use Desc if Shortdesc not work               
             );
-
+		// Google will show a warning if offer is without price info
+		if((float)$product->getFinalPrice()>0){
+			$data['offers'] = array (
+				'@type' => 'Offer',
+				'availability' => $json['availability'],
+				'category' => $json['category'],
+				'price' => number_format((float)$product->getFinalPrice(), 2, '.', ''),
+	                	'priceCurrency' => $currencyCode
+			);
+		}
             // if reviews enabled - join it to $data array
             if($review){
                 $data['aggregateRating'] = array(
@@ -143,7 +152,7 @@ class Creativestyle_Richsnippets_Block_Jsonld extends Mage_Core_Block_Template
             }
 
             // return $data table in JSON format
-            return '[' . json_encode($data) . ']';
+            return '[' . json_encode($data,JSON_UNESCAPED_UNICODE) . ']';
         }
 
         return null;
